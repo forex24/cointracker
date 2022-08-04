@@ -1,0 +1,80 @@
+version: "3.4"
+volumes:
+  influxdb_data:
+  mysql_data:
+  redis_data:
+services:
+  mysql:
+    container_name: c_mysql
+    image: "mysql:5.7"
+    env_file:
+      - .env
+    environment:
+      - MYSQL_ALLOW_EMPTY_PASSWORD=true
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin" ,"ping", "-h", "mysql" ]
+      interval: 3s
+      timeout: 1s
+      retries: 30
+  influxdb:
+      container_name: c_influxdb
+      image: influxdb:2.0.7
+      volumes:
+        - influxdb_data:/var/lib/influxdb2
+      env_file:
+        - .env
+      logging:
+        options:
+          max-size: 50m
+      healthcheck:
+        test: "curl -f http://localhost:8086/ping"
+        interval: 3s
+        timeout: 1s
+        retries: 30
+  redisdb:
+    container_name: c_redisdb
+    image: "redis:alpine"
+    healthcheck:
+      test: [ "CMD", "redis-cli","ping" ]
+      interval: 3s
+      timeout: 1s
+      retries: 30
+    logging:
+      driver: none
+    volumes:
+      - redis_data:/data
+  backend:
+    container_name: c_backend
+    image: ghcr.io/canhlinh/cointracker_backend:v2.0.1
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      redisdb:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+  dashboard:
+    container_name: c_dashboard
+    image: ghcr.io/canhlinh/cointracker_dashboard:v2.0.1
+    stdin_open: true
+    depends_on:
+      - backend
+    environment:
+      PORT: 3000
+      API_URL: http://localhost/api/v1
+    ports:
+      - 3000:3000
+  nginx:
+    image: ghcr.io/canhlinh/cointracker_nginx:v2.0.1
+    container_name: c_nginx
+    build:
+      context: ./nginx
+    ports:
+      - 80:80
+    depends_on:
+      - backend

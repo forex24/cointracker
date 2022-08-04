@@ -1,0 +1,26 @@
+version: "3.4"
+volumes:
+  influxdb_data:
+  sqllite_data:
+  redis_data:
+services:
+  backend:
+    image: canhlinh/cointracker_backend
+    build:
+      context: .
+  dashboard:
+    image: canhlinh/cointracker_dashboard
+    build:
+      context: ./dashboard
+    stdin_open: true
+    environment:
+      PORT: 3000
+      API_URL: http://localhost/api/v1
+  nginx:
+    image: canhlinh/cointracker_nginx
+    build:
+      context: ./nginx
+    ports:
+      - 80:80
+    depends_on:
+      - backend

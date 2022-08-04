@@ -1,0 +1,78 @@
+# This workflow will build and push a new container image to Amazon ECR
+#
+# To use this workflow, you will need to complete the following set-up steps:
+#
+# 1. Create an ECR repository to store your images.
+#    For example: `aws ecr create-repository --repository-name my-ecr-repo --region us-east-2`.
+#    Replace the value of `ECR_REPOSITORY` in the workflow below with your repository's name.
+#    Replace the value of `aws-region` in the workflow below with your repository's region.
+
+name: CoinTracker
+on:   
+  push:
+    tags:
+      - 'v*'
+
+  
+jobs:
+  # Push image to GitHub Packages.
+  # See also https://docs.docker.com/docker-hub/builds/
+  build_and_deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build backend
+        run: |
+          IMAGE_BACKEND_ID=ghcr.io/${{ github.repository_owner }}/cointracker_backend:${GITHUB_REF#refs/*/}
+          echo "IMAGE_BACKEND_ID=$IMAGE_BACKEND_ID" >> $GITHUB_ENV
+          echo "building backend image: $IMAGE_BACKEND_ID"
+          docker build --file Dockerfile -t $IMAGE_BACKEND_ID .
+          
+      - name: Build dashboard
+        run: |
+          IMAGE_DASHBOARD_ID=ghcr.io/${{ github.repository_owner }}/cointracker_dashboard:${GITHUB_REF#refs/*/}
+          echo "IMAGE_DASHBOARD_ID=$IMAGE_DASHBOARD_ID" >> $GITHUB_ENV
+          echo "building dashboard image: $IMAGE_DASHBOARD_ID"
+          docker build --file ./dashboard/Dockerfile -t $IMAGE_DASHBOARD_ID ./dashboard
+          
+      - name: Build nginx
+        run: |
+          IMAGE_NGINX_ID=ghcr.io/${{ github.repository_owner }}/cointracker_nginx:${GITHUB_REF#refs/*/}
+          echo "IMAGE_NGINX_ID=$IMAGE_NGINX_ID" >> $GITHUB_ENV
+          echo "building nginx image: $IMAGE_NGINX_ID"
+          docker build --file ./nginx/Dockerfile -t $IMAGE_NGINX_ID ./nginx
+          
+      - name: Log in to registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+        
+      - name: Push backend
+        run: |
+          echo "pushing backend image: ${{ env.IMAGE_BACKEND_ID }}"
+          docker push ${{ env.IMAGE_BACKEND_ID }}
+          
+      - name: Push dashboard
+        run: |
+          echo "pushing dashboard image: ${{ env.IMAGE_DASHBOARD_ID }}"
+          docker push ${{ env.IMAGE_DASHBOARD_ID }}
+          
+      - name: Push nginx
+        run: |
+          echo "pushing nginx image: ${{ env.IMAGE_NGINX_ID }}"
+          docker push ${{ env.IMAGE_NGINX_ID }}
+      - name: Notification
+        run: |
+          release_version="${GITHUB_REF#refs/*/}"
+          curl -X POST "https://api.telegram.org/bot${{ secrets.BOT_TOKEN }}/sendMessage" \
+          -H "Accept: application/json" \
+          -H "Content-Type:application/json" \
+          --data @<(cat <<EOF
+          {
+                "chat_id": -1001670877627,
+                "text": "New version ($release_version) ready to deploy"
+          }
+          EOF
+          )
